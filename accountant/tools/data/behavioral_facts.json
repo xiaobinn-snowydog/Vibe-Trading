@@ -1,0 +1,51 @@
+{
+  "_meta": {
+    "purpose": "Curated behavioral facts for accountant/tools/behavioral_context_tool.py.",
+    "rules": [
+      "Each entry MUST cite a source.",
+      "Each entry MUST be a fact, not an opinion or recommendation.",
+      "Keep each fact <= 30 Chinese characters or one short English sentence.",
+      "If unsure whether something is fact or opinion, do not include it."
+    ],
+    "review": "Treat this file as content, not code. PRs touching it should justify each new line."
+  },
+
+  "after_30pct_rally": [
+    {
+      "fact": "在标的上涨 30% 后买入的散户，更可能在后续回撤中卖在低点。",
+      "source": "Barber & Odean (2000), 'Trading Is Hazardous to Your Wealth'"
+    },
+    {
+      "fact": "买入后 12 个月跑赢市场的散户比例显著低于 50%。",
+      "source": "Dalbar QAIB Annual Report"
+    }
+  ],
+
+  "during_sharp_drawdown": [
+    {
+      "fact": "在大幅下跌时清仓的散户中，多数在 6-12 个月内未能在更低位重新入场。",
+      "source": "Vanguard Research, 2020"
+    }
+  ],
+
+  "fomo_purchase": [
+    {
+      "fact": "因朋友/媒体推荐买入的标的，散户平均持有期不到 4 个月。",
+      "source": "Hong & Stein (1999), 趋同实证整理"
+    }
+  ],
+
+  "panic_sell": [
+    {
+      "fact": "市场单日下跌 >5% 后 30 天内净卖出的账户，1 年回报中位数低于不操作组。",
+      "source": "Fidelity Account Behavior Study"
+    }
+  ],
+
+  "anchoring_to_purchase_price": [
+    {
+      "fact": "散户更倾向于在小幅盈利时卖出（处置效应），而在大幅亏损时持有不动。",
+      "source": "Shefrin & Statman (1985)"
+    }
+  ]
+}
