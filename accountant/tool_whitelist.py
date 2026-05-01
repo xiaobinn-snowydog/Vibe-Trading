@@ -36,10 +36,10 @@ if TYPE_CHECKING:
 
 ACCOUNTANT_TOOLS: list[tuple[str, str]] = [
     # ── Memory: the agent's most important capability ──
+    # Note: `remember` exposes save/recall/forget as a single tool with an
+    # `action` parameter — there is no separate `recall` tool.
     ("remember",
-     "Write decision log entries — the product's core data asset."),
-    ("recall",
-     "Read user's past decisions to anchor reflection in their own history."),
+     "Write/read/delete decision log entries — the product's core data asset."),
 
     # ── Reflection-shaped data tools (custom, see accountant/tools/) ──
     ("personal_decision_history",
@@ -52,9 +52,10 @@ ACCOUNTANT_TOOLS: list[tuple[str, str]] = [
      "user to confront downside before deciding."),
 
     # ── Plain fact lookup (allowed under BOUNDARIES §C) ──
-    ("get_market_data",
-     "Current price / historical return / max drawdown. "
-     "MUST be paired with the data-template in system_prompt.md."),
+    # Market price lookup is NOT exposed as an agent tool in the upstream
+    # registry (only via MCP). For v0 the accountant relies on web_search
+    # if the user asks for a current price; revisit if conversation tests
+    # show this is a real gap.
     ("web_search",
      "Background facts only (news, company basics). "
      "NOT for trading signals or ratings."),
@@ -106,37 +107,54 @@ def build_accountant_registry(
 ) -> "ToolRegistry":
     """Build a ToolRegistry containing exactly the accountant whitelist.
 
+    Imports ``accountant.tools`` first so the custom reflection tools register
+    as ``BaseTool`` subclasses, then builds the full upstream registry (which
+    walks ``BaseTool.__subclasses__()`` and now sees them), then filters down
+    to the whitelist.
+
     Args:
-        persistent_memory: Shared PersistentMemory instance for remember/recall.
+        persistent_memory: Shared PersistentMemory instance for ``remember``.
 
     Returns:
         A ToolRegistry with only whitelisted tools.
 
     Raises:
-        AssertionError: If the whitelist accidentally overlaps the denylist
-            (defense in depth — catches careless edits to ACCOUNTANT_TOOLS).
+        AssertionError: If the whitelist accidentally overlaps the denylist.
+        RuntimeError: If a whitelisted tool isn't registered (typo or missing
+            optional dependency).
     """
-    from src.tools import build_filtered_registry
+    # Step 1: import custom reflection tools so they register as BaseTool subclasses.
+    import accountant.tools  # noqa: F401  (registration side-effect)
 
+    # Step 2: build the full upstream registry. build_registry handles the
+    # PersistentMemory injection into RememberTool natively.
+    from src.tools import build_registry
+    from src.agent.tools import ToolRegistry
+
+    full = build_registry(persistent_memory=persistent_memory)
+
+    # Step 3: filter to the whitelist + assert no denylist overlap.
     names = [name for name, _ in ACCOUNTANT_TOOLS]
-
-    # Defense in depth: catch a developer who adds a denied tool to the list.
     overlap = set(names) & ACCOUNTANT_DENYLIST
     assert not overlap, (
         f"Whitelist contains denied tools: {overlap}. "
         f"Review accountant/BOUNDARIES.md before changing."
     )
 
-    registry = build_filtered_registry(names)
-
-    # Inject the shared PersistentMemory into RememberTool, mirroring the
-    # main build_registry behaviour so all memory ops share one instance.
-    if persistent_memory is not None:
-        remember = registry.get("remember")
-        if remember is not None and hasattr(remember, "memory"):
-            remember.memory = persistent_memory
-
-    return registry
+    filtered = ToolRegistry()
+    missing: list[str] = []
+    for name in names:
+        tool = full.get(name)
+        if tool is None:
+            missing.append(name)
+        else:
+            filtered.register(tool)
+    if missing:
+        raise RuntimeError(
+            f"Whitelisted tools not found in upstream registry: {missing}. "
+            f"Either the tool name is wrong or its optional deps are missing."
+        )
+    return filtered
 
 
 def whitelist_summary() -> str:
