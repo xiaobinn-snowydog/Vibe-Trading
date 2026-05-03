@@ -34,32 +34,42 @@ if TYPE_CHECKING:
 # "helps the user think, not buys/sells/predicts", do NOT add it.
 #
 
-ACCOUNTANT_TOOLS: list[tuple[str, str]] = [
-    # ── Memory: the agent's most important capability ──
+# ---------------------------------------------------------------------------
+# Whitelist
+# ---------------------------------------------------------------------------
+#
+# Each entry: (tool_name, required, justification).
+#   required=True   → startup fails if the tool isn't registered (core capability)
+#   required=False  → soft-fail with a warning, accountant still launches
+#
+# RULE: if you cannot write a one-line justification grounded in
+# "helps the user think, not buys/sells/predicts", do NOT add it.
+#
+
+ACCOUNTANT_TOOLS: list[tuple[str, bool, str]] = [
+    # ── Core (required): without these the product can't function ──
     # Note: `remember` exposes save/recall/forget as a single tool with an
     # `action` parameter — there is no separate `recall` tool.
-    ("remember",
+    ("remember", True,
      "Write/read/delete decision log entries — the product's core data asset."),
-
-    # ── Reflection-shaped data tools (custom, see accountant/tools/) ──
-    ("personal_decision_history",
+    ("personal_decision_history", True,
      "Surface the user's past decisions on the same topic — pure mirror."),
-    ("behavioral_context",
+    ("behavioral_context", True,
      "Surface behavioral facts about retail investors in similar situations "
      "(facts only, no opinion)."),
-    ("volatility_reality_check",
+    ("volatility_reality_check", True,
      "Show the worst historical return for a holding period — forces the "
      "user to confront downside before deciding."),
 
-    # ── Plain fact lookup (allowed under BOUNDARIES §C) ──
+    # ── Optional: nice to have, accountant degrades gracefully without ──
     # Market price lookup is NOT exposed as an agent tool in the upstream
     # registry (only via MCP). For v0 the accountant relies on web_search
     # if the user asks for a current price; revisit if conversation tests
     # show this is a real gap.
-    ("web_search",
+    ("web_search", False,
      "Background facts only (news, company basics). "
      "NOT for trading signals or ratings."),
-    ("read_url",
+    ("read_url", False,
      "Read a specific URL the user mentions. Same constraints as web_search."),
 ]
 
@@ -123,6 +133,9 @@ def build_accountant_registry(
         RuntimeError: If a whitelisted tool isn't registered (typo or missing
             optional dependency).
     """
+    import logging
+    log = logging.getLogger(__name__)
+
     # Step 1: import custom reflection tools so they register as BaseTool subclasses.
     import accountant.tools  # noqa: F401  (registration side-effect)
 
@@ -133,35 +146,55 @@ def build_accountant_registry(
 
     full = build_registry(persistent_memory=persistent_memory)
 
-    # Step 3: filter to the whitelist + assert no denylist overlap.
-    names = [name for name, _ in ACCOUNTANT_TOOLS]
+    # Step 3: defense in depth — catch a developer who adds a denied tool.
+    names = [name for name, _, _ in ACCOUNTANT_TOOLS]
     overlap = set(names) & ACCOUNTANT_DENYLIST
     assert not overlap, (
         f"Whitelist contains denied tools: {overlap}. "
         f"Review accountant/BOUNDARIES.md before changing."
     )
 
+    # Step 4: register what's available; only fail hard for missing CORE tools.
     filtered = ToolRegistry()
-    missing: list[str] = []
-    for name in names:
+    missing_core: list[str] = []
+    missing_optional: list[str] = []
+    for name, required, _ in ACCOUNTANT_TOOLS:
         tool = full.get(name)
         if tool is None:
-            missing.append(name)
-        else:
-            filtered.register(tool)
-    if missing:
-        raise RuntimeError(
-            f"Whitelisted tools not found in upstream registry: {missing}. "
-            f"Either the tool name is wrong or its optional deps are missing."
+            (missing_core if required else missing_optional).append(name)
+            continue
+        filtered.register(tool)
+
+    if missing_optional:
+        log.warning(
+            "Optional accountant tools unavailable (missing deps?): %s. "
+            "Accountant will run without them. Install ddgs + requests to enable.",
+            missing_optional,
         )
+        # Also surface to stderr so a non-DEBUG run still sees it.
+        import sys
+        print(
+            f"  [optional tools skipped: {', '.join(missing_optional)} "
+            f"— accountant will run without them]",
+            file=sys.stderr,
+        )
+
+    if missing_core:
+        raise RuntimeError(
+            f"Required accountant tools not registered: {missing_core}. "
+            f"This is a bug — these tools are core to the product. "
+            f"Check accountant/tools/__init__.py imports."
+        )
+
     return filtered
 
 
 def whitelist_summary() -> str:
     """Return a human-readable summary, used by the CLI / docs / tests."""
     lines = ["账房先生 — allowed tools:\n"]
-    for name, why in ACCOUNTANT_TOOLS:
-        lines.append(f"  - {name}: {why}")
+    for name, required, why in ACCOUNTANT_TOOLS:
+        marker = "(required)" if required else "(optional)"
+        lines.append(f"  - {name} {marker}: {why}")
     lines.append("\nExplicitly denied:")
     for name in sorted(ACCOUNTANT_DENYLIST):
         lines.append(f"  - {name}")
