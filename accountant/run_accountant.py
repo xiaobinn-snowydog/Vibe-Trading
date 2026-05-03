@@ -41,7 +41,7 @@ except ImportError:
     pass
 
 # ── Imports that depend on the path bootstrap ─────────────────────────────
-from accountant.tests.test_boundaries import find_violations, has_question
+from accountant.boundaries import find_violations, has_question
 from accountant.tool_whitelist import build_accountant_registry
 
 
