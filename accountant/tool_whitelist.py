@@ -16,6 +16,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -171,13 +172,14 @@ def build_accountant_registry(
             "Accountant will run without them. Install ddgs + requests to enable.",
             missing_optional,
         )
-        # Also surface to stderr so a non-DEBUG run still sees it.
-        import sys
-        print(
-            f"  [optional tools skipped: {', '.join(missing_optional)} "
-            f"— accountant will run without them]",
-            file=sys.stderr,
-        )
+        # Surface to stderr only when not in quiet mode (set by run_accountant.py).
+        if not os.environ.get("ACCOUNTANT_QUIET"):
+            import sys
+            print(
+                f"  [optional tools skipped: {', '.join(missing_optional)} "
+                f"— accountant will run without them]",
+                file=sys.stderr,
+            )
 
     if missing_core:
         raise RuntimeError(
